@@ -2,7 +2,7 @@ use std::io::Cursor;
 use std::io::Read;
 use std::path::Path;
 
-// use std::io::Write;                                                                                                                                                                  
+use std::io::Write;                                                                                                                                                                  
 // use std::io::prelude::*;                                                                                                                                                             
 use std::fs::File;  
 
@@ -84,14 +84,14 @@ impl ZdmpBlockHdr {
 }
 
 impl ZdmpFile {
-    pub fn new(path: &Path) -> Result<Self> {
+    pub fn new(in_path: &Path, out_path: &Path) -> Result<Self> {
         info!("Parsing file...");
 
-        let mut file = File::open(path)?;
+        let mut file = File::open(in_path)?;
 
         let mut buf = vec![0; mem::size_of::<ZdmpFileHdr>()];
 
-        // file.seek(std::io::SeekFrom::Start(0));
+        file.seek(std::io::SeekFrom::Start(0))?;
         file.read_exact(&mut buf)?;
         let mut rdr = Cursor::new(buf);
 
@@ -101,48 +101,56 @@ impl ZdmpFile {
         let base = rdr.position();
         trace_func!("base: 0x{:x}", base);
 
-        let mut _block_count = 0;
-        let mut block_hdr_buf = vec![0; mem::size_of::<ZdmpBlockHdr>()];
+        let mut block_offset: u64 = ZDMP_BLOCK_START_OFFSET;
+        let mut block_id = 0;
+
+        let block_size = zdmp_hdr.block_size; 
+        info!("hdr.block_size:      0x{:x}", block_size);
+
+        let mut out_file = File::create(out_path).expect("Err: Unable to create file"); 
         
-        file.seek(std::io::SeekFrom::Start(ZDMP_BLOCK_START_OFFSET))?;
-        file.read_exact(&mut block_hdr_buf)?;
-        rdr = Cursor::new(block_hdr_buf);
-        let zdmp_block = ZdmpBlockHdr::new(&mut rdr)?;
+        while block_offset < zdmp_hdr.file_size {
+            let mut block_hdr_buf = vec![0; mem::size_of::<ZdmpBlockHdr>()];
+            file.seek(std::io::SeekFrom::Start(block_offset))?;
+            file.read_exact(&mut block_hdr_buf)?;
+            rdr = Cursor::new(block_hdr_buf);
+            let zdmp_block = ZdmpBlockHdr::new(&mut rdr)?;
 
-        trace_multi!("zdmp_block", zdmp_block);
+            trace_multi!("zdmp_block", zdmp_block);
 
-        if zdmp_block.data_size > zdmp_hdr.block_size {
-            return Err(Error::DumpParseError(
-                format!("Unexpected zdump block size: 0x{:x}",
-                    { zdmp_block.data_size })));
+            if zdmp_block.data_size > zdmp_hdr.block_size {
+                return Err(Error::DumpParseError(
+                    format!("Unexpected zdump block size: 0x{:x}",
+                        { zdmp_block.data_size })));
+            }
+            
+            let data_size = zdmp_block.data_size; 
+            let crc32 = zdmp_block.crc32; 
+            info!("[{}] block.data_size:     0x{:x}", block_id, data_size);
+            info!("[{}] block.crc32:         0x{:x}", block_id, crc32);
+
+            let mut block_data_buf = vec![0; zdmp_block.data_size as usize];
+            file.read_exact(&mut block_data_buf)?;
+            // info!("{:02X?}", block_data_buf);
+            // rdr = Cursor::new(block_data_buf);
+            let checksum = CRC32_IEEE.checksum(&block_data_buf);
+            info!("[{}] crc32:               0x{:x}", block_id, checksum);
+
+            if checksum != zdmp_block.crc32 {
+                return Err(Error::DumpParseError(
+                    format!("Incorrect crc32. 0x{} (expected 0x{})",
+                        checksum,  crc32)));  
+            }
+
+            let uncompressed = lzxpress::lznt1::decompress(&block_data_buf).unwrap();
+            info!("[{}] uncompressed.len():  0x{:x}", block_id, uncompressed.len());
+            let data_bytes: &[u8] = &uncompressed;       
+            out_file.write_all(data_bytes).expect("Unable to write data");
+
+            block_offset += mem::size_of::<ZdmpBlockHdr>() as u64;
+            block_offset += zdmp_block.data_size as u64;
+            block_id += 1;
         }
-
-        
-        let data_size = zdmp_block.data_size; 
-        let crc32 = zdmp_block.crc32; 
-        info!("block.data_size:     0x{:x}", data_size);
-        info!("block.crc32:         0x{:x}", crc32);
-
-        let mut block_data_buf = vec![0; zdmp_block.data_size as usize];
-        file.read_exact(&mut block_data_buf)?;
-        // info!("{:02X?}", block_data_buf);
-        // rdr = Cursor::new(block_data_buf);
-        let checksum = CRC32_IEEE.checksum(&block_data_buf);
-        info!("crc32:               0x{:x}", checksum);
-
-        if checksum != zdmp_block.crc32 {
-            return Err(Error::DumpParseError(
-                format!("Incorrect crc32. 0x{} (expected 0x{})",
-                    checksum,  crc32)));  
-        }
-
-        // let mut f = File::create("block1.test").expect("Unable to create file"); 
-        // let data_bytes: &[u8] = &block_data_buf;                                                                                                                                                                                                                                                                     
-        // f.write_all(data_bytes).expect("Unable to write data");
-
-        let uncompressed = lzxpress::lznt1::decompress(&block_data_buf).unwrap();
-
-        info!("uncompressed.len():  0x{:x}", uncompressed.len());
 
         Ok(ZdmpFile { hdr: zdmp_hdr })
     } 

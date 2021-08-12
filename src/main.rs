@@ -6,7 +6,7 @@ use z2dmp::zdmp;
 
 fn main() {
     // Log-level (default: info).
-    let log_level = "debug".to_string();
+    let log_level = "info".to_string();
     
     let _log = logger::init(&log_level);
 
@@ -21,5 +21,5 @@ fn main() {
     info!("Input File:  {}", in_file);
     info!("Output File: {}", out_file);
 
-    let _zdmp_file = zdmp::ZdmpFile::new(Path::new(in_file));
+    let _zdmp_file = zdmp::ZdmpFile::new(Path::new(in_file), Path::new(out_file));
 }
