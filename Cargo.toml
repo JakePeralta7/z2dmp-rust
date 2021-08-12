@@ -1,0 +1,17 @@
+[package]
+name = "z2dmp-rust"
+version = "0.1.0"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "z2dmp"
+path = "src/lib.rs"
+test = false
+doctest = false
+
+[dependencies]
+rust-lzxpress = "0.6.5"
+lazy_static = "1.4.0"
+crc = "2.0.0"
