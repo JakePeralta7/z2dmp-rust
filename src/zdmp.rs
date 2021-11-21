@@ -130,11 +130,16 @@ impl ZdmpFile {
         let mut block_id = 0;
 
         let block_size = zdmp_hdr.block_size; 
+        let file_size = file.metadata().unwrap().len();
         info!("hdr.block_size:      0x{:x}", block_size);
+        info!("file_size:           0x{:x}", file_size);
+        info!("zdmp_hdr.file_size:  0x{:x}", zdmp_hdr.file_size as usize);
 
         let mut out_file = File::create(out_path).expect("Err: Unable to create file"); 
-        
-        while block_offset < zdmp_hdr.file_size {
+
+        let mut uncompressed: Vec<u8> = Vec::with_capacity(block_size as usize);
+
+        while block_offset < file_size {
             info!("Block #{} @ 0x{:x}", block_id, block_offset);
             let mut block_hdr_buf = vec![0; mem::size_of::<ZdmpBlockHdr>()];
             file.seek(std::io::SeekFrom::Start(block_offset))?;
@@ -157,8 +162,6 @@ impl ZdmpFile {
 
             let mut block_data_buf = vec![0; zdmp_block.data_size as usize];
             file.read_exact(&mut block_data_buf)?;
-            // info!("{:02X?}", block_data_buf);
-            // rdr = Cursor::new(block_data_buf);
             let checksum = CRC32_IEEE.checksum(&block_data_buf);
             trace!("[{}] crc32:               0x{:x}", block_id, checksum);
 
@@ -169,10 +172,15 @@ impl ZdmpFile {
             }
 
             if zdmp_block.data_size != block_size {
-                let uncompressed = lzxpress::lznt1::decompress(&block_data_buf).unwrap();
+                uncompressed.clear();
+                match lzxpress::lznt1::decompress2(&block_data_buf, &mut uncompressed) {
+                    Err(e) => println!("{:?}", e),
+                    _ => ()
+                };
+
                 trace!("[{}] uncompressed.len():  0x{:x}", block_id, uncompressed.len());
 
-                if uncompressed.len() != block_size as usize {
+                if uncompressed.len() > block_size as usize {
                     return Err(Error::DumpParseError(
                         format!("Incorrect uncompressed block size. 0x{:x} (expected 0x{:x})",
                             uncompressed.len(),  block_size)));  

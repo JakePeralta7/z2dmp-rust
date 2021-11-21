@@ -12,6 +12,6 @@ test = false
 doctest = false
 
 [dependencies]
-rust-lzxpress = "0.7.0"
+rust-lzxpress = "0.7.1"
 lazy_static = "1.4.0"
 crc = "2.0.0"

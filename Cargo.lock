@@ -25,9 +25,9 @@ checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
 name = "rust-lzxpress"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eaaa3ffe7f67c3f41a049dd5583733725501d146127db4a59cfca665f3f1d41e"
+checksum = "0e78de2a1e054da285ce9383e8cbc962d4a2d35adfa204fd6710d803a4bc5564"
 
 [[package]]
 name = "z2dmp-rust"
