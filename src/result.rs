@@ -26,7 +26,7 @@ impl From<std::io::Error> for Error {
 impl From<std::num::ParseIntError> for Error {
     fn from(err: std::num::ParseIntError) -> Self {
         let msg = err.to_string();
-        match err.kind() {
+        match err {
             _ => Error::IntParseError(msg),
         }
     }

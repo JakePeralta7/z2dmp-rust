@@ -10,7 +10,7 @@ use std::io::Seek;
 
 use std::mem;
 
-use std::time::{Instant, Duration};
+use std::time::{Instant};
 
 use crate::result::{Result, Error};
 
@@ -31,7 +31,7 @@ pub const BLOCK_DATA_TYPE_NONE:         u16 = 0x00;
 pub const BLOCK_DATA_TYPE_COMPRESSION:  u16 = 0x01;
 pub const BLOCK_DATA_TYPE_ENCRYPTION:   u16 = 0x02;
 
-pub const COMPRESSION_FORMAT_LZNT1;     u16 = 0x02;
+pub const COMPRESSION_FORMAT_LZNT1:     u16 = 0x02;
 
 /// ZDMP File Header
 #[repr(C, packed)]
@@ -135,7 +135,7 @@ impl ZdmpFile {
         let mut out_file = File::create(out_path).expect("Err: Unable to create file"); 
         
         while block_offset < zdmp_hdr.file_size {
-            info!("Block @ 0x{:x}", block_offset);
+            info!("Block #{} @ 0x{:x}", block_id, block_offset);
             let mut block_hdr_buf = vec![0; mem::size_of::<ZdmpBlockHdr>()];
             file.seek(std::io::SeekFrom::Start(block_offset))?;
             file.read_exact(&mut block_hdr_buf)?;
@@ -152,15 +152,15 @@ impl ZdmpFile {
             
             let data_size = zdmp_block.data_size; 
             let crc32 = zdmp_block.crc32; 
-            info!("[{}] block.data_size:     0x{:x}", block_id, data_size);
-            info!("[{}] block.crc32:         0x{:x}", block_id, crc32);
+            trace!("[{}] block.data_size:     0x{:x}", block_id, data_size);
+            trace!("[{}] block.crc32:         0x{:x}", block_id, crc32);
 
             let mut block_data_buf = vec![0; zdmp_block.data_size as usize];
             file.read_exact(&mut block_data_buf)?;
             // info!("{:02X?}", block_data_buf);
             // rdr = Cursor::new(block_data_buf);
             let checksum = CRC32_IEEE.checksum(&block_data_buf);
-            info!("[{}] crc32:               0x{:x}", block_id, checksum);
+            trace!("[{}] crc32:               0x{:x}", block_id, checksum);
 
             if checksum != zdmp_block.crc32 {
                 return Err(Error::DumpParseError(
@@ -170,7 +170,7 @@ impl ZdmpFile {
 
             if zdmp_block.data_size != block_size {
                 let uncompressed = lzxpress::lznt1::decompress(&block_data_buf).unwrap();
-                info!("[{}] uncompressed.len():  0x{:x}", block_id, uncompressed.len());
+                trace!("[{}] uncompressed.len():  0x{:x}", block_id, uncompressed.len());
 
                 if uncompressed.len() != block_size as usize {
                     return Err(Error::DumpParseError(
