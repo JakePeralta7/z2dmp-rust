@@ -1,5 +1,5 @@
 [package]
-name = "z2dmp-rust"
+name = "z2dmp"
 version = "0.1.0"
 edition = "2018"
 
