@@ -94,6 +94,13 @@ jobs:
       with:
         path: ./artifacts
 
+    - name: Prepare release assets
+      run: |
+        mkdir -p release-assets
+        cp artifacts/z2dmp-linux-x86_64/z2dmp release-assets/z2dmp-linux-x86_64
+        cp artifacts/z2dmp-windows-x86_64.exe/z2dmp.exe release-assets/z2dmp-windows-x86_64.exe
+        cp artifacts/z2dmp-macos-x86_64/z2dmp release-assets/z2dmp-macos-x86_64
+
     - name: Extract release notes
       id: extract_notes
       run: |
@@ -129,7 +136,7 @@ jobs:
       with:
         name: Release ${{ steps.extract_notes.outputs.version }}
         body_path: release-notes.md
-        files: artifacts/**/*
+        files: release-assets/*
         draft: false
         prerelease: false
       env:
