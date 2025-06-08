@@ -6,8 +6,6 @@ use std::io::Write;
 use std::io::BufWriter;                                                                                                                                                  
 use std::fs::File;  
 
-use std::io::Seek;
-
 use std::mem;
 
 use std::time::{Instant};
@@ -201,7 +199,7 @@ impl ZdmpFile {
             let handle = thread::spawn(move || {
                 // Pre-allocate buffers per thread
                 let mut uncompressed_buf = Vec::with_capacity(block_size as usize * 2);
-                let mut temp_buf = Vec::with_capacity(block_size as usize);
+                let mut _temp_buf = Vec::with_capacity(block_size as usize);
                 
                 for block_info in chunk {
                     let data_start = block_info.offset + mem::size_of::<ZdmpBlockHdr>() as u64;
@@ -213,7 +211,7 @@ impl ZdmpFile {
                         // Verify CRC32
                         let checksum = CRC32_IEEE.checksum(block_data);
                         if checksum != block_info.header.crc32 {
-                            warn!("CRC mismatch for block {}", block_info.id);
+                            info!("CRC mismatch for block {}", block_info.id);
                             continue;
                         }
                         
@@ -224,7 +222,7 @@ impl ZdmpFile {
                             match lzxpress::lznt1::decompress2(block_data, &mut uncompressed_buf) {
                                 Ok(_) => {
                                     if uncompressed_buf.len() > block_size as usize {
-                                        warn!("Decompressed block {} too large", block_info.id);
+                                        info!("Decompressed block {} too large", block_info.id);
                                         continue;
                                     }
                                     
@@ -233,7 +231,7 @@ impl ZdmpFile {
                                     uncompressed_buf.clone()
                                 }
                                 Err(e) => {
-                                    debug!("Decompression error for block {}: {:?}", block_info.id, e);
+                                    info!("Decompression error for block {}: {:?}", block_info.id, e);
                                     continue;
                                 }
                             }

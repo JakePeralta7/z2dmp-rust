@@ -5,7 +5,7 @@ macro_rules! read_type {
         // `size_of` and `transmute` cannot be easily used with generics.
         let mut buf = [0u8; std::mem::size_of::<$ty>()];
 
-        $rdr.read(&mut buf)?;
+        $rdr.read_exact(&mut buf)?;
 
         let hdr: $ty = unsafe { std::mem::transmute(buf) };
 
