@@ -261,7 +261,7 @@ impl ZdmpFile {
         // Phase 3: Write blocks in order (if not silent mode)
         let mut uncompressed_size = 0;
         let mut next_expected_id = 0;
-        let mut out_of_order_blocks = std::collections::HashMap::new();
+        let mut out_of_order_blocks: std::collections::HashMap<u64, ProcessedBlock> = std::collections::HashMap::new();
         
         let mut out_writer = if !silent_mode {
             Some(BufWriter::with_capacity(
