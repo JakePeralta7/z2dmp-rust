@@ -18,7 +18,6 @@ use crc::{Crc, CRC_32_ISO_HDLC};
 use std::str;
 use lzxpress;
 use memmap2::Mmap;
-use rayon::prelude::*;
 use crossbeam_channel::{bounded, Receiver, Sender};
 
 pub const CRC32_IEEE: Crc<u32> = Crc::<u32>::new(&CRC_32_ISO_HDLC);
@@ -199,7 +198,7 @@ impl ZdmpFile {
             let handle = thread::spawn(move || {
                 // Pre-allocate buffers per thread
                 let mut uncompressed_buf = Vec::with_capacity(block_size as usize * 2);
-                let mut _temp_buf = Vec::with_capacity(block_size as usize);
+                let mut _temp_buf: Vec<u8> = Vec::with_capacity(block_size as usize);
                 
                 for block_info in chunk {
                     let data_start = block_info.offset + mem::size_of::<ZdmpBlockHdr>() as u64;
