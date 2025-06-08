@@ -15,7 +15,7 @@ fn main()
 
     let args: Vec<String> = env::args().collect();
     if args.len() < 3 {
-        panic!("Usage: {} <input_file> <output_file>", args[0]);
+        panic!("Usage: {} <input_file> <output_file> [--silent]", args[0]);
     }
 
     let in_file = &args[1];
@@ -32,6 +32,10 @@ fn main()
     if !silent_mode {
         info!("Output File: {}", out_file);
     }
+    
+    // System info
+    info!("CPU cores available: {}", num_cpus::get());
+    info!("System memory optimization enabled");
 
     let zdmp_file = zdmp::ZdmpFile::new(Path::new(in_file), Path::new(out_file), silent_mode)?;
 
