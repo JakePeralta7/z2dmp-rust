@@ -7,8 +7,8 @@ pub enum Error {
     // IO.
     IoError(String),
 
-    // Dumps.
-    DumpParseError(String),
+    // Dumps - simplified to avoid string allocations in hot paths
+    DumpParseError,
     
     // Int.
     IntParseError(String),

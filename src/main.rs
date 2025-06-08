@@ -23,24 +23,27 @@ fn main()
 
     // debug mode.
     let mut silent_mode = false; 
-    /*
-    if args.len() > 3 {
+    if args.len() > 3 && args[3] == "--silent" {
         silent_mode = true;
-        info!("Silent:  {}", silent_mode);
+        info!("Silent mode enabled");
     }
-    */
     
     info!("Input File:  {}", in_file);
-    info!("Output File: {}", out_file);
+    if !silent_mode {
+        info!("Output File: {}", out_file);
+    }
 
     let zdmp_file = zdmp::ZdmpFile::new(Path::new(in_file), Path::new(out_file), silent_mode)?;
 
     let total_time = zdmp_file.finish_time - zdmp_file.start_time;
 
     info!("Expected file size:       0x{:x}", zdmp_file.file_size);
-    info!("Current file size:        0x{:x}", zdmp_file.uncompressed_size);
-    info!("Total decompression time: {} secs", total_time.as_secs());
-    info!("Total decompression size: {} MBs", (zdmp_file.uncompressed_size) / (1024*1024));
+    info!("Actual decompressed size: 0x{:x}", zdmp_file.uncompressed_size);
+    info!("Total blocks processed:   {}", zdmp_file.block_count);
+    info!("Total decompression time: {:.2} secs", total_time.as_secs_f64());
+    info!("Decompressed size:        {:.2} MB", (zdmp_file.uncompressed_size as f64) / (1024.0 * 1024.0));
+    info!("Throughput:               {:.2} MB/s", 
+        (zdmp_file.uncompressed_size as f64) / (1024.0 * 1024.0) / total_time.as_secs_f64());
 
     Ok(())
 }

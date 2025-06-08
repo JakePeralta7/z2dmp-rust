@@ -11,6 +11,12 @@ path = "src/lib.rs"
 test = false
 doctest = false
 
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
 [dependencies]
 rust-lzxpress = "0.7.1"
 lazy_static = "1.4.0"

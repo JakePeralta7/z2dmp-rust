@@ -2,8 +2,8 @@ use std::io::Cursor;
 use std::io::Read;
 use std::path::Path;
 
-use std::io::Write;                                                                                                                                                                  
-// use std::io::prelude::*;                                                                                                                                                             
+use std::io::Write;
+use std::io::BufWriter;                                                                                                                                                  
 use std::fs::File;  
 
 use std::io::Seek;
@@ -70,9 +70,7 @@ impl ZdmpFileHdr {
         let hdr = read_type!(&mut rdr, ZdmpFileHdr)?;
 
         if hdr.signature != ZDMP_FILE_SIGNATURE {
-            return Err(Error::DumpParseError(
-                format!("Unexpected zdump signature field: 0x{:x}",
-                    { hdr.signature })));
+            return Err(Error::DumpParseError);
         }
 
         info!("Zdmp file opened.");
@@ -81,15 +79,12 @@ impl ZdmpFileHdr {
     }
 }
 
-
 impl ZdmpBlockHdr {
     pub fn new(mut rdr: impl Read) -> Result<Self> {
         let hdr = read_type!(&mut rdr, ZdmpBlockHdr)?;
 
         if hdr.signature != ZDMP_BLOCK_SIGNATURE {
-            return Err(Error::DumpParseError(
-                format!("Unexpected zdump block signature field: 0x{:x}",
-                    { hdr.signature })));
+            return Err(Error::DumpParseError);
         }
 
         Ok(hdr)
@@ -107,11 +102,12 @@ impl ZdmpFile {
         let start_time = Instant::now(); 
         let mut file = File::open(in_path)?;
 
-        let mut buf = vec![0; mem::size_of::<ZdmpFileHdr>()];
+        // Reusable buffer for headers
+        let mut hdr_buf = vec![0; mem::size_of::<ZdmpFileHdr>().max(mem::size_of::<ZdmpBlockHdr>())];
 
         file.seek(std::io::SeekFrom::Start(0))?;
-        file.read_exact(&mut buf)?;
-        let mut rdr = Cursor::new(buf);
+        file.read_exact(&mut hdr_buf[..mem::size_of::<ZdmpFileHdr>()])?;
+        let mut rdr = Cursor::new(&hdr_buf[..mem::size_of::<ZdmpFileHdr>()]);
 
         let zdmp_hdr = ZdmpFileHdr::new(&mut rdr)?;
         trace_multi!("zdmp_hdr", zdmp_hdr);
@@ -120,13 +116,11 @@ impl ZdmpFile {
         trace_func!("base: 0x{:x}", base);
 
         if zdmp_hdr.data_type != BLOCK_DATA_TYPE_COMPRESSION {
-            return Err(Error::DumpParseError(
-                format!("Unsupported dump file.")));  
+            return Err(Error::DumpParseError);
         }
 
         if zdmp_hdr.compression_format != COMPRESSION_FORMAT_LZNT1 {
-            return Err(Error::DumpParseError(
-                format!("Unsupported compression algorithm.")));  
+            return Err(Error::DumpParseError);
         }
 
         let mut block_offset: u64 = ZDMP_BLOCK_START_OFFSET;
@@ -139,27 +133,38 @@ impl ZdmpFile {
         info!("file_size:           0x{:x}", file_size);
         info!("zdmp_hdr.file_size:  0x{:x}", zdmp_hdr.file_size as usize);
 
-        // Create an empty file if silent_mode is true.
-        let mut out_file = File::create(out_path).expect("Err: Unable to create file"); 
+        // Create buffered writer for better I/O performance
+        let mut out_writer = if !silent_mode {
+            Some(BufWriter::with_capacity(
+                1024 * 1024, // 1MB buffer
+                File::create(out_path)?
+            ))
+        } else {
+            None
+        };
 
+        // Reusable buffers
         let mut uncompressed: Vec<u8> = Vec::with_capacity(block_size as usize);
+        let mut block_data_buf: Vec<u8> = Vec::with_capacity(block_size as usize);
 
         while block_offset < file_size {
-            info!("Block #{} @ 0x{:x}", block_id, block_offset);
-            let mut block_hdr_buf = vec![0; mem::size_of::<ZdmpBlockHdr>()];
-            file.seek(std::io::SeekFrom::Start(block_offset))?;
-            if let Err(_val) = file.read_exact(&mut block_hdr_buf) {
-                println!("Error while reading block header #{} @ 0x{:x}. Is file corrupted?", block_id, block_offset);   
+            if block_id % 1000 == 0 {
+                info!("Processed {} blocks", block_id);
             }
-            rdr = Cursor::new(block_hdr_buf);
+            
+            file.seek(std::io::SeekFrom::Start(block_offset))?;
+            if file.read_exact(&mut hdr_buf[..mem::size_of::<ZdmpBlockHdr>()]).is_err() {
+                info!("Error while reading block header #{} @ 0x{:x}. Is file corrupted?", block_id, block_offset);   
+                break;
+            }
+            
+            rdr = Cursor::new(&hdr_buf[..mem::size_of::<ZdmpBlockHdr>()]);
             let zdmp_block = ZdmpBlockHdr::new(&mut rdr)?;
 
             trace_multi!("zdmp_block", zdmp_block);
 
             if zdmp_block.data_size > zdmp_hdr.block_size {
-                return Err(Error::DumpParseError(
-                    format!("Unexpected zdump block size: 0x{:x}",
-                        { zdmp_block.data_size })));
+                return Err(Error::DumpParseError);
             }
             
             let data_size = zdmp_block.data_size; 
@@ -167,80 +172,54 @@ impl ZdmpFile {
             trace!("[{}] block.data_size:     0x{:x}", block_id, data_size);
             trace!("[{}] block.crc32:         0x{:x}", block_id, crc32);
 
-            let mut block_data_buf = vec![0; data_size as usize];
-            if let Err(_val) = file.read_exact(&mut block_data_buf) {
-                /*
-                return Err(Error::DumpParseError(
-                    format!("Error while reading block @ 0x{:x}, 0x{:x} bytes, limit: 0x{:x}. Is file corrupted?",
-                    block_offset + mem::size_of::<ZdmpBlockHdr>() as u64,
-                    data_size,
-                    block_offset + mem::size_of::<ZdmpBlockHdr>() as u64 + data_size as u64));  
-                */
-                info!("Error while reading block @ 0x{:x}, 0x{:x} bytes, limit: 0x{:x}. Is file corrupted?",
-                    block_offset + mem::size_of::<ZdmpBlockHdr>() as u64,
-                    data_size,
-                    block_offset + mem::size_of::<ZdmpBlockHdr>() as u64 + data_size as u64);  
-                    
-                uncompressed_size += block_data_buf.len();
-                // this should not happen.
-                if silent_mode == false {
-                    let data_bytes: &[u8] = &block_data_buf;
-                    out_file.write_all(data_bytes).expect("Unable to write data");
+            // Resize buffer only if needed
+            if block_data_buf.len() < data_size as usize {
+                block_data_buf.resize(data_size as usize, 0);
+            }
+            
+            if file.read_exact(&mut block_data_buf[..data_size as usize]).is_err() {
+                info!("Error while reading block @ 0x{:x}, 0x{:x} bytes", 
+                    block_offset + mem::size_of::<ZdmpBlockHdr>() as u64, data_size);
+                uncompressed_size += data_size as usize;
+                
+                if let Some(ref mut writer) = out_writer {
+                    writer.write_all(&block_data_buf[..data_size as usize])?;
                 }
             } else {
-                let checksum = CRC32_IEEE.checksum(&block_data_buf);
+                let checksum = CRC32_IEEE.checksum(&block_data_buf[..data_size as usize]);
                 trace!("[{}] crc32:               0x{:x}", block_id, checksum);
 
                 if checksum != zdmp_block.crc32 {
-                    return Err(Error::DumpParseError(
-                        format!("Incorrect crc32. 0x{:x} (expected 0x{:x})",
-                            checksum,  crc32)));  
+                    return Err(Error::DumpParseError);
                 }
 
                 if zdmp_block.data_size != block_size {
                     uncompressed.clear();
-                    match lzxpress::lznt1::decompress2(&block_data_buf, &mut uncompressed) {
-                        Err(e) => println!("{:?}", e),
-                        _ => ()
-                    };
-
-                    if uncompressed.len() != block_size as usize {
-                        info!("[{}] uncompressed.len():  0x{:x}", block_id, uncompressed.len());
+                    if let Err(e) = lzxpress::lznt1::decompress2(&block_data_buf[..data_size as usize], &mut uncompressed) {
+                        debug!("Decompression error: {:?}", e);
                     }
 
                     if uncompressed.len() > block_size as usize {
-                        return Err(Error::DumpParseError(
-                            format!("Incorrect uncompressed block size. 0x{:x} (expected 0x{:x})",
-                                uncompressed.len(),  block_size)));  
+                        return Err(Error::DumpParseError);
                     }
 
-                    if uncompressed.len() < block_size  as usize {
-                        // Padding for scenarios where the decompressed buffer is smaller.
-                        let bytes_left_to_copy = block_size as usize - uncompressed.len();
-                        for _n in 0..bytes_left_to_copy {
-                            uncompressed.push(0);
-                        }
-                        // panic!("yo");
+                    // Pad if necessary
+                    if uncompressed.len() < block_size as usize {
+                        uncompressed.resize(block_size as usize, 0);
                     }
 
-                    assert_eq!(uncompressed.len(), block_size as usize);
-
-                    if silent_mode == false {
-                        let data_bytes: &[u8] = &uncompressed;       
-                        out_file.write_all(data_bytes).expect("Unable to write data");
+                    if let Some(ref mut writer) = out_writer {
+                        writer.write_all(&uncompressed)?;
                     }
                     
                     uncompressed_size += uncompressed.len();
                 } else {
-                    uncompressed_size += block_data_buf.len();
-                    // Not compressed.
-                    if silent_mode == false {
-                        let data_bytes: &[u8] = &block_data_buf;
-                        out_file.write_all(data_bytes).expect("Unable to write data");
+                    // Not compressed
+                    if let Some(ref mut writer) = out_writer {
+                        writer.write_all(&block_data_buf[..data_size as usize])?;
                     }
+                    uncompressed_size += data_size as usize;
                 }
-
-                // TODO: Write every n-th data_bytes to reduce the number of disk I/O.
             }
 
             block_offset += mem::size_of::<ZdmpBlockHdr>() as u64;
@@ -248,11 +227,20 @@ impl ZdmpFile {
             block_id += 1;
         }
 
+        // Flush the buffered writer
+        if let Some(mut writer) = out_writer {
+            writer.flush()?;
+        }
+
         let finish_time = Instant::now();
 
-        Ok(ZdmpFile { hdr: zdmp_hdr, file_size: zdmp_hdr.file_size, 
+        Ok(ZdmpFile { 
+            hdr: zdmp_hdr, 
+            file_size: zdmp_hdr.file_size, 
             block_count: block_id,
             uncompressed_size: uncompressed_size,
-            start_time: start_time, finish_time: finish_time})
+            start_time: start_time, 
+            finish_time: finish_time
+        })
     } 
 }
